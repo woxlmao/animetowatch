@@ -2,385 +2,520 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Anime Canvas — Wanted Stars</title>
+  <title>Anime Canvas — White Minimal Cards</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root{
-      --bg0:#070b14; --bg1:#0b1220;
-      --ink:#e8edf3; --soft:#a7b1c2;
-      --glow:#22d3ee; --warn:#ef4444; --gold:#ffd54a; --line:#1f2937;
-      --card:#0d1424; --card-h:#121a2c;
-      --accent:#f59e0b; --ok:#10b981;
+      --bg:#ffffff; --ink:#0b1220; --muted:#475569; --line:#e5e7eb;
+      --card:#ffffff; --shadow:0 6px 28px rgba(2,6,23,.06);
+      --gold:#f5c542; --gold-d:#b38700; --warn:#ef4444; --glow:#22d3ee;
     }
-    html,body{height:100%;margin:0;background:radial-gradient(1200px 700px at 15% 10%,var(--bg1),var(--bg0));color:var(--ink);font-family:Inter,Segoe UI,Roboto,system-ui,-apple-system,sans-serif;}
+    html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:Inter,Segoe UI,Roboto,system-ui,-apple-system,sans-serif;overflow-y:scroll}
     canvas{position:fixed;inset:0;display:block;z-index:0}
-    .hud{position:fixed;left:20px;top:16px;z-index:2;user-select:none}
-    .title{font-weight:800;letter-spacing:.4px;font-size:clamp(22px,3vw,36px);text-shadow:0 0 18px rgba(34,211,238,.25)}
-    .sub{opacity:.8;font-size:13px;margin-top:6px}
-    .pill{display:inline-block;padding:6px 10px;border:1px solid #1e293b;border-radius:999px;background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,0));margin-top:10px;color:#cbd5e1}
-    .footer{position:fixed;right:20px;bottom:12px;z-index:2;opacity:.8;font-size:12px}
-    /* Accessibility toggles (no external CSS/JS needed) */
-    .toggles{position:fixed;left:20px;bottom:14px;z-index:2;display:flex;gap:10px}
-    .toggle{cursor:pointer;border:1px solid #233048;border-radius:999px;padding:6px 10px;background:rgba(255,255,255,.02)}
-    .toggle:hover{background:rgba(255,255,255,.05)}
+    .hud{position:fixed;left:20px;top:16px;z-index:2;user-select:none;background:rgba(255,255,255,.7);backdrop-filter:saturate(1.2) blur(6px);padding:10px 12px;border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}
+    .title{font-weight:800;letter-spacing:.3px;font-size:clamp(20px,2.8vw,30px)}
+    .sub{opacity:.85;font-size:12px;margin-top:4px;color:#334155}
+    .toggles{position:fixed;right:20px;top:16px;z-index:2;display:flex;gap:10px}
+    .toggle{cursor:pointer;border:1px solid var(--line);border-radius:999px;padding:6px 10px;background:#fff;color:#0f172a;box-shadow:var(--shadow)}
+    .toggle:hover{background:#f8fafc}
+    .footer{position:fixed;right:20px;bottom:12px;z-index:2;opacity:.75;font-size:12px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:6px 10px;box-shadow:var(--shadow)}
   </style>
 </head>
 <body>
   <canvas id="bg"></canvas>
+
   <div class="hud">
     <div class="title">ANIME THAT I WANT TO WATCH 🎬✨</div>
-    <div class="sub">All‑Canvas showcase with GTA‑style stars, animated covers, and spoiler‑free vibes.</div>
-    <div class="pill">Tip: move mouse or tap to highlight</div>
+    <div class="sub">White minimalist cards, GTA‑style stars, animated GIF covers, spoiler‑free one‑liners.</div>
   </div>
   <div class="toggles">
     <button class="toggle" id="toggleGlow">Toggle Glow</button>
-    <button class="toggle" id="togglePerf">Performance Mode</button>
+    <button class="toggle" id="togglePerf">Performance</button>
   </div>
-  <div class="footer">Canvas powered animations, requestAnimationFrame loop, and optional ImageDecoder for animated images.</div>
+  <div class="footer">Local assets/slug.gif recommended; remote images may require CORS for Canvas.</div>
 
   <script>
   ;(() => {
+    // Canvas and DPR
     const canvas = document.getElementById('bg');
     const ctx = canvas.getContext('2d', { alpha: true });
-    let W = 0, H = 0, DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    let W=0,H=0,DPR=Math.max(1,Math.min(2,window.devicePixelRatio||1));
+    let SCROLL_Y=0;
 
-    const state = {
-      items: [],
-      cards: [],
-      pointer: { x: 0, y: 0, down:false },
-      time: 0,
-      glow: true,
-      perf: false
+    const state = { cards:[], items:[], time:0, glow:true, perf:false, maxY:0, pointer:{x:-9999,y:-9999} };
+
+    // Parse the full list from text (from your provided titles with stars)
+    // Tip: add or edit lines freely; parser reads category headers and "⭐" counts, "✨" adds half.
+    const rawList = `
+# 🔥 Masterpiece Core
+Attack on Titan (AOT) ⭐⭐⭐⭐⭐
+Vinland Saga ⭐⭐⭐⭐⭐
+Fullmetal Alchemist: Brotherhood ⭐⭐⭐⭐⭐
+Death Note ⭐⭐⭐⭐✨
+Code Geass ⭐⭐⭐⭐✨
+Steins;Gate ⭐⭐⭐⭐⭐
+Neon Genesis Evangelion + End of Eva ⭐⭐⭐⭐✨
+Monster ⭐⭐⭐⭐⭐
+Berserk (1997 + Manga) ⭐⭐⭐⭐⭐
+Gurren Lagann ⭐⭐⭐⭐✨
+
+# 🌀 Psychological / Confusing
+Serial Experiments Lain ⭐⭐⭐⭐⭐
+Texhnolyze ⭐⭐⭐⭐✨
+Ergo Proxy ⭐⭐⭐⭐✨
+Boogiepop Phantom ⭐⭐⭐⭐
+Paranoia Agent ⭐⭐⭐⭐✨
+Haibane Renmei ⭐⭐⭐⭐
+Perfect Blue ⭐⭐⭐⭐⭐
+Paprika ⭐⭐⭐⭐⭐
+Tatami Galaxy ⭐⭐⭐⭐✨
+Welcome to the NHK ⭐⭐⭐⭐✨
+
+# ⚔️ Dark / Historical / Epic
+Vinland Saga ⭐⭐⭐⭐⭐
+Berserk ⭐⭐⭐⭐⭐
+Kingdom ⭐⭐⭐⭐✨
+Legend of the Galactic Heroes ⭐⭐⭐⭐⭐
+Dororo ⭐⭐⭐⭐
+91 Days ⭐⭐⭐⭐✨
+Rurouni Kenshin: Trust & Betrayal ⭐⭐⭐⭐
+Akame ga Kill! ⭐⭐⭐
+Shigurui ⭐⭐⭐⭐
+Golden Kamuy ⭐⭐⭐⭐✨
+
+# 🌌 Cyberpunk / Tech Future
+Ghost in the Shell (movie + SAC) ⭐⭐⭐⭐⭐
+Akira ⭐⭐⭐⭐⭐
+Cyberpunk: Edgerunners ⭐⭐⭐⭐⭐
+Blame! ⭐⭐⭐⭐
+Ergo Proxy ⭐⭐⭐⭐✨
+Texhnolyze ⭐⭐⭐⭐✨
+Megazone 23 ⭐⭐⭐⭐
+Serial Experiments Lain ⭐⭐⭐⭐⭐
+Bubblegum Crisis ⭐⭐⭐
+Psycho-Pass ⭐⭐⭐⭐✨
+
+# 🎭 Emotional / Drama
+Clannad: After Story ⭐⭐⭐⭐⭐
+Your Lie in April ⭐⭐⭐⭐✨
+Anohana ⭐⭐⭐⭐✨
+A Silent Voice ⭐⭐⭐⭐⭐
+5 Centimeters per Second ⭐⭐⭐⭐
+Grave of the Fireflies ⭐⭐⭐⭐⭐
+Orange ⭐⭐⭐⭐
+Erased ⭐⭐⭐⭐✨
+March Comes in Like a Lion ⭐⭐⭐⭐✨
+Fruits Basket ⭐⭐⭐⭐
+
+# 💥 Action / Hype Shonen
+Hunter x Hunter ⭐⭐⭐⭐⭐
+Jujutsu Kaisen ⭐⭐⭐⭐✨
+Demon Slayer ⭐⭐⭐⭐✨
+Naruto + Shippuden ⭐⭐⭐⭐
+One Piece ⭐⭐⭐⭐⭐
+Black Clover ⭐⭐⭐
+Bleach: Thousand-Year Blood War ⭐⭐⭐⭐✨
+Fire Force ⭐⭐⭐⭐
+Chainsaw Man ⭐⭐⭐⭐✨
+My Hero Academia ⭐⭐⭐⭐
+
+# 🩸 Gore / Horror
+Tokyo Ghoul ⭐⭐⭐⭐
+Elfen Lied ⭐⭐⭐⭐✨
+Another ⭐⭐⭐⭐
+Higurashi: When They Cry ⭐⭐⭐⭐✨
+Shiki ⭐⭐⭐⭐
+Corpse Party ⭐⭐⭐
+Paranoia Agent ⭐⭐⭐⭐✨
+Hell Girl ⭐⭐⭐⭐
+Devilman Crybaby ⭐⭐⭐⭐✨
+Ajin ⭐⭐⭐⭐
+
+# 🎨 Aesthetic / Short Bangers
+Erased ⭐⭐⭐⭐✨
+91 Days ⭐⭐⭐⭐✨
+Cyberpunk: Edgerunners ⭐⭐⭐⭐⭐
+No Game No Life ⭐⭐⭐⭐✨
+The Great Pretender ⭐⭐⭐⭐✨
+Samurai Champloo ⭐⭐⭐⭐✨
+Cowboy Bebop ⭐⭐⭐⭐⭐
+Ping Pong the Animation ⭐⭐⭐⭐✨
+Kaiba ⭐⭐⭐⭐✨
+Devilman Crybaby ⭐⭐⭐⭐✨
+
+# 🎉 Extra 30–40 Peak Additions
+Fate/Zero ⭐⭐⭐⭐✨
+Fate/Stay Night: Heaven’s Feel ⭐⭐⭐⭐✨
+Akame ga Kill ⭐⭐⭐
+Zankyou no Terror ⭐⭐⭐⭐
+Made in Abyss ⭐⭐⭐⭐✨
+Land of the Lustrous ⭐⭐⭐⭐✨
+Banana Fish ⭐⭐⭐⭐✨
+Re:Zero ⭐⭐⭐⭐✨
+Violet Evergarden ⭐⭐⭐⭐✨
+D.Gray-Man ⭐⭐⭐⭐
+Soul Eater ⭐⭐⭐⭐
+Durarara!! ⭐⭐⭐⭐✨
+Baccano! ⭐⭐⭐⭐✨
+KonoSuba ⭐⭐⭐⭐
+Mushoku Tensei ⭐⭐⭐⭐✨
+Angel Beats ⭐⭐⭐⭐
+Toradora ⭐⭐⭐⭐✨
+Gantz ⭐⭐⭐
+Parasyte ⭐⭐⭐⭐✨
+Eden of the East ⭐⭐⭐⭐
+Black Lagoon ⭐⭐⭐⭐✨
+Gungrave ⭐⭐⭐⭐✨
+Samurai X OVAs ⭐⭐⭐⭐
+FLCL ⭐⭐⭐⭐✨
+Big O ⭐⭐⭐⭐
+Casshern Sins ⭐⭐⭐⭐✨
+Hellsing Ultimate ⭐⭐⭐⭐✨
+Akudama Drive ⭐⭐⭐⭐✨
+Dorohedoro ⭐⭐⭐⭐✨
+Tower of God ⭐⭐⭐⭐
+The World God Only Knows ⭐⭐⭐⭐
+Kill la Kill ⭐⭐⭐⭐✨
+Gantz: O (movie) ⭐⭐⭐
+Planetes ⭐⭐⭐⭐✨
+Outlaw Star ⭐⭐⭐⭐
+RahXephon ⭐⭐⭐⭐✨
+Eden of the East ⭐⭐⭐⭐
+`.trim();
+
+    const categoryBlurbs = {
+      "🔥 Masterpiece Core":"Defining works prized for scale, craft, and impact—no spoilers, just the vibe.",
+      "🌀 Psychological / Confusing":"Mind‑benders that question reality, identity, and memory without hand‑holding.",
+      "⚔️ Dark / Historical / Epic":"Long shadows, real costs, and sweeping conflicts across eras.",
+      "🌌 Cyberpunk / Tech Future":"Wired worlds, identity drift, and chrome‑tinted futures.",
+      "🎭 Emotional / Drama":"Delicate feelings, quiet moments, and catharsis.",
+      "💥 Action / Hype Shonen":"Systems, training arcs, and fireworks with heart.",
+      "🩸 Gore / Horror":"Dread, bodies, and consequences—handled thoughtfully.",
+      "🎨 Aesthetic / Short Bangers":"Style‑forward, tight runtimes, strong impressions.",
+      "🎉 Extra 30–40 Peak Additions":"Assorted gems to round out the watchlist."
     };
 
-    // Anime data: replace img with local animated GIF/APNG paths under ./assets/ (kept short and spoiler‑free)
-    const animeList = [
-      { title:"Attack on Titan",      rating:5,  img:"assets/aot.gif",      blurb:"Cycles of freedom and war collide in a brutal epic." },
-      { title:"Vinland Saga",         rating:5,  img:"assets/vinland.gif",  blurb:"A journey from revenge to the cost of peace." },
-      { title:"Steins;Gate",          rating:5,  img:"assets/steins.gif",   blurb:"Small timeline tweaks carry heavy consequences." },
-      { title:"Fullmetal Alchemist",  rating:5,  img:"assets/fmab.gif",     blurb:"Alchemy, brotherhood, and the price of desire." },
-      { title:"Code Geass",           rating:4.5,img:"assets/geass.gif",    blurb:"Masked rebellion plays chess with fate." },
-      { title:"Neon Genesis Eva",     rating:4.5,img:"assets/eva.gif",      blurb:"Mecha as a mirror for identity and fear." },
-      { title:"Monster",              rating:5,  img:"assets/monster.gif",  blurb:"One choice echoes through a moral labyrinth." },
-      { title:"Cyberpunk: Edgerunners",rating:5, img:"assets/edger.gif",    blurb:"Found family racing against a city’s entropy." },
-      { title:"Ghost in the Shell",   rating:5,  img:"assets/gits.gif",     blurb:"Networks and selfhood blur into the machine." },
-      { title:"Clannad: After Story", rating:5,  img:"assets/clannad.gif",  blurb:"Family, hardship, and quiet miracles." }
-    ];
+    const blurbOverrides = {
+      "Attack on Titan (AOT)":"Cycles of freedom and war collide in a brutal epic.",
+      "Vinland Saga":"A journey from revenge to the cost of peace.",
+      "Fullmetal Alchemist: Brotherhood":"Alchemy, brotherhood, and the price of desire.",
+      "Death Note":"A cat‑and‑mouse spiral over the meaning of justice.",
+      "Code Geass":"Masked rebellion plays chess with fate.",
+      "Steins;Gate":"Small timeline tweaks carry heavy consequences.",
+      "Neon Genesis Evangelion + End of Eva":"Mecha as a mirror for identity and fear.",
+      "Monster":"One choice echoes through a moral labyrinth.",
+      "Berserk (1997 + Manga)":"Destiny, ambition, and darkness carve a tragedy.",
+      "Cyberpunk: Edgerunners":"Found family sprinting against a city’s entropy.",
+      "Ghost in the Shell (movie + SAC)":"Networks and selfhood blur into the machine.",
+      "Clannad: After Story":"Family, hardship, and quiet miracles.",
+      "Cowboy Bebop":"Cool blues and bounty dust.",
+      "Paranoia Agent":"Societal anxiety turns into an urban myth."
+    };
 
-    // Resize and DPR handling
+    function slugify(s){
+      return s.toLowerCase()
+        .replace(/[^a-z0-9]+/g,'-')
+        .replace(/(^-|-$)/g,'')
+        .replace(/-+/g,'-');
+    }
+
+    function parseList(text){
+      const lines = text.split(/\r?\n/);
+      let cat = "";
+      const items = [];
+      for (let raw of lines){
+        const line = raw.trim();
+        if (!line) continue;
+        if (line.startsWith('#')){
+          cat = line.replace(/^#\s*/,'').trim();
+          continue;
+        }
+        // Extract stars
+        const starCount = (line.match(/⭐/g)||[]).length;
+        const half = line.includes('✨') ? 0.5 : 0;
+        const title = line.replace(/\s*⭐.*$/,'').trim();
+        if (!title) continue;
+        const rating = Math.max(1, Math.min(5, starCount + half));
+        const blurb = blurbOverrides[title] || categoryBlurbs[cat] || "A standout experience within its lane.";
+        items.push({
+          title, rating, blurb, category:cat,
+          img:`assets/${slugify(title)}.gif`
+        });
+      }
+      return items;
+    }
+
+    const animeList = parseList(rawList);
+
+    // Canvas/DPR/Scroll
     function resize(){
-      W = Math.floor(window.innerWidth * DPR);
-      H = Math.floor(window.innerHeight * DPR);
+      const vw = window.innerWidth, vh = window.innerHeight;
+      W = Math.floor(vw * DPR); H = Math.floor(vh * DPR);
       canvas.width = W; canvas.height = H;
-      canvas.style.width = Math.floor(W / DPR) + 'px';
-      canvas.style.height = Math.floor(H / DPR) + 'px';
+      canvas.style.width = vw+'px'; canvas.style.height = vh+'px';
       layout();
+      document.body.style.height = Math.ceil(state.maxY / DPR + 80) + 'px';
     }
     window.addEventListener('resize', resize, { passive:true });
+    window.addEventListener('scroll', () => { SCROLL_Y = Math.max(0, window.scrollY) * DPR; }, { passive:true });
 
-    // Background particles
-    const PCOUNT_BASE = 120;
+    // Pointer
+    canvas.addEventListener('mousemove', e => {
+      const r = canvas.getBoundingClientRect();
+      state.pointer.x = (e.clientX - r.left) * DPR;
+      state.pointer.y = (e.clientY - r.top) * DPR + SCROLL_Y;
+    }, { passive:true });
+    canvas.addEventListener('mouseleave', () => { state.pointer.x = -9999; state.pointer.y = -9999; });
+
+    // Particles (very subtle for white theme)
+    const PCOUNT_BASE = 70;
     let particles = [];
     function initParticles(){
-      const PCOUNT = state.perf ? Math.floor(PCOUNT_BASE*0.45) : PCOUNT_BASE;
-      particles = Array.from({length:PCOUNT}, () => ({
+      const n = state.perf ? Math.floor(PCOUNT_BASE*0.4) : PCOUNT_BASE;
+      particles = Array.from({length:n}, () => ({
         x: Math.random()*W, y: Math.random()*H,
-        r: (Math.random()*1.6+0.5)*DPR,
-        vx: (Math.random()-.5)*0.25*DPR,
-        vy: (Math.random()-.5)*0.25*DPR,
-        hue: Math.random()*360
+        r: (Math.random()*1.2+0.4)*DPR,
+        vx: (Math.random()-.5)*0.15*DPR,
+        vy: (Math.random()-.5)*0.15*DPR,
+        a: Math.random()*0.25+0.05
       }));
     }
 
-    // Image helpers: prefer WebCodecs ImageDecoder for animated images if available; fallback to HTMLImage + redraw each frame
+    // Media: prefer WebCodecs ImageDecoder when available
     function loadAnimated(src){
-      const supportsDecoder = ('ImageDecoder' in window);
-      let obj = { kind:'fallback', w:0, h:0, ready:false };
-
-      if (supportsDecoder){
-        obj.kind = 'decoder';
-        obj.frames = [];
-        obj.index = 0;
-        obj.delay = 80;
-        (async () => {
+      const supports = ('ImageDecoder' in window);
+      let obj = { kind:'img', ready:false, w:0, h:0 };
+      if (supports){
+        obj.kind='decoder'; obj.frames=[]; (async () => {
           try{
             const resp = await fetch(src);
             const buff = await resp.arrayBuffer();
-            const dec = new ImageDecoder({ data: new Uint8Array(buff), type: resp.headers.get('content-type') || 'image/gif' });
+            const type = resp.headers.get('content-type') || 'image/gif';
+            const dec = new ImageDecoder({ data:new Uint8Array(buff), type });
             await dec.tracks.ready;
-            const frameCount = dec.tracks.selectedTrack?.frameCount || 1;
-            for (let i=0;i<frameCount;i++){
+            const count = dec.tracks.selectedTrack?.frameCount || 1;
+            for (let i=0;i<count;i++){
               const { image, duration } = await dec.decode({ frameIndex:i });
               const bmp = await createImageBitmap(image);
-              obj.frames.push({ bmp, duration: duration || obj.delay });
+              obj.frames.push({ bmp, duration: duration || 80 });
               if (i===0){ obj.w = bmp.width; obj.h = bmp.height; }
             }
             obj.ready = true;
           }catch(e){
-            // Fallback silently
-            obj.kind = 'img';
-            const im = new Image(); im.decoding = 'async'; im.loading = 'eager';
-            im.onload = () => { obj.w = im.naturalWidth; obj.h = im.naturalHeight; obj.ready = true; };
+            const im = new Image(); im.decoding='async'; im.onload=()=>{ obj.w=im.naturalWidth; obj.h=im.naturalHeight; obj.ready=true; };
             im.src = src; obj.img = im;
           }
         })();
       } else {
-        obj.kind = 'img';
-        const im = new Image(); im.decoding = 'async'; im.loading = 'eager';
-        im.onload = () => { obj.w = im.naturalWidth; obj.h = im.naturalHeight; obj.ready = true; };
+        const im = new Image(); im.decoding='async'; im.onload=()=>{ obj.w=im.naturalWidth; obj.h=im.naturalHeight; obj.ready=true; };
         im.src = src; obj.img = im;
       }
       return obj;
     }
 
-    // Create cards with target rects
+    // Layout grid (scrollable)
     function layout(){
-      // Grid config
-      const pd = 18 * DPR;
-      const cols = Math.max(1, Math.min(4, Math.floor((W/DPR) / 320)));
-      const cardW = Math.floor((W - (pd*(cols+1))) / cols);
-      const cardH = Math.floor(120 * DPR + cardW*0.05); // image row + text
-
+      const pad = 18 * DPR;
+      const cols = Math.max(1, Math.min(3, Math.floor((W/DPR) / 380)));
+      const cardW = Math.floor((W - pad*(cols+1)) / cols);
+      const rowH = Math.floor(148 * DPR);
       state.cards.length = 0;
-      let cx = 0, cy = 0;
+
       animeList.forEach((a, i) => {
-        const col = i % cols;
-        const row = Math.floor(i / cols);
-        const x = Math.floor(pd + col*(cardW + pd));
-        const y = Math.floor(pd + row*(cardH + pd));
-        const w = Math.floor(cardW);
-        const h = Math.floor(cardH);
+        if (!state.items[i]) state.items[i] = { media: loadAnimated(a.img) };
+        const col = i % cols, row = Math.floor(i / cols);
+        const x = Math.floor(pad + col*(cardW + pad));
+        const y = Math.floor(pad + row*(rowH + pad));
+        const w = Math.floor(cardW), h = Math.floor(rowH);
 
-        if (!state.items[i]){
-          state.items[i] = {
-            media: loadAnimated(a.img)
-          };
-        }
-
-        const card = state.cards[i] || {};
-        card.x = card.x ?? x; card.y = card.y ?? (y + 30*DPR);
-        card.tx = x; card.ty = y;
-        card.w = w; card.h = h;
-        card.title = a.title;
-        card.rating = a.rating;
-        card.blurb = a.blurb;
-        card.media = state.items[i].media;
-        card.scale = card.scale ?? 1;
-        card.hover = 0;
-        state.cards[i] = card;
-        cy = y + h;
+        state.cards[i] = {
+          x, y, w, h,
+          tx:x, ty:y,
+          title:a.title, rating:a.rating, blurb:a.blurb, category:a.category,
+          media: state.items[i].media,
+          hover:0, scale:1
+        };
       });
-      // Add bottom spacing by adding some fake height
-      state.maxY = (state.cards.length ? state.cards[state.cards.length-1].ty + state.cards[state.cards.length-1].h : 0) + pd;
+
+      const last = state.cards[state.cards.length-1];
+      state.maxY = last ? last.y + last.h + pad : H;
     }
 
-    // Pointer interactions
-    canvas.addEventListener('mousemove', (e) => {
-      const rect = canvas.getBoundingClientRect();
-      state.pointer.x = (e.clientX - rect.left) * DPR;
-      state.pointer.y = (e.clientY - rect.top) * DPR;
-    }, { passive:true });
-    canvas.addEventListener('mouseleave', () => {
-      state.pointer.x = -9999; state.pointer.y = -9999;
-    });
-    canvas.addEventListener('pointerdown', () => { state.pointer.down = true; });
-    canvas.addEventListener('pointerup', () => { state.pointer.down = false; });
-
-    // Draw utils
     function RRect(ctx,x,y,w,h,r){
       const rr = Math.min(r, Math.min(w,h)/2);
       ctx.beginPath();
-      ctx.moveTo(x+rr, y);
-      ctx.arcTo(x+w, y, x+w, y+h, rr);
-      ctx.arcTo(x+w, y+h, x, y+h, rr);
-      ctx.arcTo(x, y+h, x, y, rr);
-      ctx.arcTo(x, y, x+w, y, rr);
+      ctx.moveTo(x+rr,y);
+      ctx.arcTo(x+w,y,x+w,y+h,rr);
+      ctx.arcTo(x+w,y+h,x,y+h,rr);
+      ctx.arcTo(x,y+h,x,y,rr);
+      ctx.arcTo(x,y,x+w,y,rr);
       ctx.closePath();
     }
+
     function drawText(ctx, text, x, y, size, color, weight=700){
       ctx.font = `${weight} ${size}px Inter, Segoe UI, Roboto, system-ui, -apple-system, sans-serif`;
-      ctx.fillStyle = color; ctx.textBaseline = 'top';
-      ctx.fillText(text, x, y);
+      ctx.fillStyle = color; ctx.textBaseline='top'; ctx.fillText(text, x, y);
     }
+
     function drawParagraph(ctx, text, x, y, w, size, color){
       ctx.font = `400 ${size}px Inter, Segoe UI, Roboto, system-ui, -apple-system, sans-serif`;
-      ctx.fillStyle = color; ctx.textBaseline = 'top';
-      const words = text.split(' ');
-      let line = '', yy = y, lh = Math.round(size*1.35);
-      for (const word of words){
-        const t = line ? (line + ' ' + word) : word;
+      ctx.fillStyle = color; ctx.textBaseline='top';
+      const words = text.split(' '); let line='', yy=y; const lh = Math.round(size*1.4);
+      for(const word of words){
+        const t = line ? line+' '+word : word;
         if (ctx.measureText(t).width > w){ ctx.fillText(line, x, yy); yy += lh; line = word; }
         else line = t;
       }
       if (line) ctx.fillText(line, x, yy);
     }
-    function drawStar(ctx, cx, cy, spikes, outerR, innerR, fill, stroke, shadow=0, glowColor='#22d3ee'){
-      let rot = Math.PI / 2 * 3;
-      let x = cx, y = cy;
+
+    function drawStar(ctx, cx, cy, spikes, outerR, innerR, fill, stroke, glow=0, glowColor='#f59e0b'){
+      let rot = Math.PI/2*3, x=cx, y=cy;
       ctx.beginPath();
-      ctx.moveTo(cx, cy - outerR);
-      for (let i = 0; i < spikes; i++) {
-        x = cx + Math.cos(rot) * outerR;
-        y = cy + Math.sin(rot) * outerR;
-        ctx.lineTo(x, y);
-        rot += Math.PI / spikes;
-
-        x = cx + Math.cos(rot) * innerR;
-        y = cy + Math.sin(rot) * innerR;
-        ctx.lineTo(x, y);
-        rot += Math.PI / spikes;
+      ctx.moveTo(cx, cy-outerR);
+      for(let i=0;i<spikes;i++){
+        x = cx + Math.cos(rot)*outerR; y = cy + Math.sin(rot)*outerR; ctx.lineTo(x,y); rot += Math.PI/spikes;
+        x = cx + Math.cos(rot)*innerR; y = cy + Math.sin(rot)*innerR; ctx.lineTo(x,y); rot += Math.PI/spikes;
       }
-      ctx.lineTo(cx, cy - outerR);
-      ctx.closePath();
-      if (shadow>0){
-        ctx.shadowBlur = shadow;
-        ctx.shadowColor = glowColor;
-      }
-      ctx.fillStyle = fill;
-      ctx.fill();
-      ctx.shadowBlur = 0;
-      ctx.lineWidth = Math.max(1, outerR*0.12);
-      ctx.strokeStyle = stroke;
-      ctx.stroke();
+      ctx.lineTo(cx,cy-outerR); ctx.closePath();
+      if (glow>0){ ctx.shadowBlur=glow; ctx.shadowColor=glowColor; }
+      ctx.fillStyle = fill; ctx.fill(); ctx.shadowBlur=0;
+      ctx.lineWidth = Math.max(1, outerR*0.12); ctx.strokeStyle = stroke; ctx.stroke();
     }
 
-    // GTA‑style wanted stars row
-    function drawWantedStars(ctx, x, y, level, max=5, t=0){
-      const starGap = 22 * DPR;
-      const baseR = 9 * DPR;
-      const innerR = baseR * 0.5;
-      for (let i=0;i<max;i++){
-        const filled = i < Math.round(level - 1e-6);
-        const danger = level >= 5 ? 1 : (level >= 4 ? 0.6 : 0);
-        const puls = danger ? (0.55 + 0.45*Math.abs(Math.sin(t*0.004 + i))) : 0;
-        const glow = filled ? (6*DPR*(state.glow?1:0)) + (danger? 6*DPR*puls : 0) : 0;
-        const fill = filled ? (danger ? `hsl(${Math.round(0+20*puls)},85%,${Math.round(50+8*puls)}%)` : '#ffd54a') : 'rgba(0,0,0,0.15)';
-        const stroke = filled ? '#2b2b2b' : '#39445a';
-        drawStar(ctx, x + i*starGap, y, 5, baseR, innerR, fill, stroke, glow, danger ? '#ef4444' : '#ffd54a');
+    function drawStarsRow(ctx, x, y, level, max=5, t=0){
+      const gap = 22 * DPR, R = 9 * DPR, r = R*0.5;
+      for(let i=0;i<max;i++){
+        const filled = i < Math.floor(level + 1e-6);
+        const halfstar = (i === Math.floor(level) && level%1>0) ? 1 : 0;
+        const glowPulse = filled && level>=5 ? (0.5 + 0.5*Math.abs(Math.sin(t*0.004 + i))) : 0;
+        const glow = filled ? (6*DPR*(state.glow?1:0) + (level>=5? 6*DPR*glowPulse : 0)) : 0;
+        const fill = filled ? '#f5c542' : (halfstar ? '#f5c542' : 'rgba(0,0,0,0.08)');
+        drawStar(ctx, x + i*gap, y, 5, R, r, fill, filled ? '#b38700' : '#cbd5e1', glow, level>=5 ? '#ef4444' : '#f5c542');
+        if (halfstar && !filled){
+          // overlay half (optional)
+        }
       }
     }
 
-    // Media draw (ImageDecoder animated or fallback)
     function drawMedia(ctx, media, dx, dy, dw, dh, t){
-      if (!media || !media.ready) {
-        // Placeholder shimmer
-        const g = ctx.createLinearGradient(dx, dy, dx+dw, dy);
-        g.addColorStop(0, '#0f172a'); g.addColorStop(0.5, '#0b1220'); g.addColorStop(1, '#0f172a');
-        ctx.fillStyle = g; RRect(ctx, dx, dy, dw, dh, 10*DPR); ctx.fill();
-        ctx.strokeStyle = 'rgba(255,255,255,.06)'; ctx.stroke();
-        return;
-      }
-      if (media.kind === 'decoder' && media.frames && media.frames.length){
-        // Cycle frames by accumulated time
-        const total = media.frames.reduce((s,f)=>s+f.duration,0) || 1;
-        let tt = Math.floor(t % total);
-        let idx = 0; let acc = 0;
-        for(let i=0;i<media.frames.length;i++){ acc += media.frames[i].duration; if (tt < acc){ idx = i; break; } }
+      // Placeholder
+      RRect(ctx, dx, dy, dw, dh, 12*DPR);
+      ctx.fillStyle = '#f8fafc'; ctx.fill(); ctx.strokeStyle = '#e5e7eb'; ctx.stroke();
+
+      if (!media || !media.ready) return;
+
+      if (media.kind==='decoder' && media.frames?.length){
+        const total = media.frames.reduce((s,f)=>s+f.duration,0)||1;
+        let tt = Math.floor(t % total), idx=0, acc=0;
+        for(let i=0;i<media.frames.length;i++){ acc+=media.frames[i].duration; if(tt<acc){ idx=i; break; } }
         const bmp = media.frames[idx].bmp;
-        // Fit cover
         const scale = Math.max(dw/bmp.width, dh/bmp.height);
-        const sw = bmp.width*scale, sh = bmp.height*scale;
+        const sw = bmp.width*scale, sh=bmp.height*scale;
         const sx = dx + (dw - sw)/2, sy = dy + (dh - sh)/2;
-        RRect(ctx, dx, dy, dw, dh, 10*DPR); ctx.save(); ctx.clip();
+        ctx.save(); RRect(ctx, dx, dy, dw, dh, 12*DPR); ctx.clip();
         ctx.drawImage(bmp, sx, sy, sw, sh);
         ctx.restore();
-        ctx.strokeStyle = 'rgba(255,255,255,.07)'; ctx.stroke();
-      } else if (media.kind === 'img' && media.img){
+        ctx.strokeStyle = '#e5e7eb'; ctx.stroke();
+      } else if (media.img){
         const im = media.img;
-        const scale = Math.max(dw/(im.naturalWidth||dw), dh/(im.naturalHeight||dh));
-        const sw = (im.naturalWidth||dw)*scale;
-        const sh = (im.naturalHeight||dh)*scale;
+        const iw = im.naturalWidth||dw, ih=im.naturalHeight||dh;
+        const scale = Math.max(dw/iw, dh/ih);
+        const sw = iw*scale, sh=ih*scale;
         const sx = dx + (dw - sw)/2, sy = dy + (dh - sh)/2;
-        RRect(ctx, dx, dy, dw, dh, 10*DPR); ctx.save(); ctx.clip();
+        ctx.save(); RRect(ctx, dx, dy, dw, dh, 12*DPR); ctx.clip();
         ctx.drawImage(im, sx, sy, sw, sh);
         ctx.restore();
-        ctx.strokeStyle = 'rgba(255,255,255,.07)'; ctx.stroke();
+        ctx.strokeStyle = '#e5e7eb'; ctx.stroke();
       }
     }
 
-    // Main loop
-    function step(now){
-      state.time = now || (performance.now ? performance.now() : Date.now());
-
-      // Clear
+    function draw(){
+      // White background
       ctx.clearRect(0,0,W,H);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0,0,W,H);
 
-      // Background particles
-      for (const p of particles){
-        p.x += p.vx; p.y += p.vy; p.hue = (p.hue + 0.2) % 360;
+      // Subtle floating dots (white theme)
+      for(const p of particles){
+        p.x += p.vx; p.y += p.vy;
         if (p.x < -10) p.x = W+10; if (p.x > W+10) p.x = -10;
         if (p.y < -10) p.y = H+10; if (p.y > H+10) p.y = -10;
         ctx.beginPath();
-        ctx.fillStyle = `hsla(${p.hue}, 90%, 60%, .5)`;
+        ctx.fillStyle = `rgba(15,23,42,${p.a})`;
         ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
         ctx.fill();
       }
 
-      // Cards
+      const t = state.time;
       const mx = state.pointer.x, my = state.pointer.y;
+
       for (const c of state.cards){
-        // Lerp to target
-        c.x += (c.tx - c.x) * 0.1;
-        c.y += (c.ty - c.y) * 0.12;
+        const yOnScreen = c.y - SCROLL_Y;
 
-        // Hover detection
-        const hx = mx > c.x && mx < c.x + c.w;
-        const hy = my > c.y && my < c.y + c.h;
-        const targetHover = (hx && hy) ? 1 : 0;
-        c.hover += (targetHover - c.hover) * 0.2;
-        c.scale = 1 + 0.02*c.hover;
+        // Only draw visible rows (simple culling)
+        if (yOnScreen > H || yOnScreen + c.h < -100*DPR) continue;
 
-        const x = c.x, y = c.y, w = c.w, h = c.h;
-        const sc = c.scale;
-        const cx = x + w/2, cy = y + h/2;
-        const drawX = cx - (w*sc)/2, drawY = cy - (h*sc)/2, drawW = w*sc, drawH = h*sc;
+        // Hover detection uses scroll offset
+        const isHover = (mx > c.x && mx < c.x + c.w && (my - SCROLL_Y) > c.y && (my - SCROLL_Y) < c.y + c.h);
+        c.hover += ((isHover?1:0) - c.hover) * 0.25;
+        c.scale = 1 + 0.015*c.hover;
 
-        // Card panel
+        const pad = 14*DPR, r = 16*DPR;
+        const w = c.w, h=c.h, sc=c.scale;
+        const cx = c.x + w/2, cy = yOnScreen + h/2;
+        const x = cx - (w*sc)/2, y = cy - (h*sc)/2, Wc = w*sc, Hc = h*sc;
+
+        // Card background
         ctx.save();
-        RRect(ctx, drawX, drawY, drawW, drawH, 16*DPR);
-        const grd = ctx.createLinearGradient(drawX, drawY, drawX, drawY+drawH);
-        grd.addColorStop(0, 'rgba(255,255,255,.03)');
-        grd.addColorStop(1, 'rgba(255,255,255,.01)');
-        ctx.fillStyle = grd; ctx.fill();
-        ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,255,255,.08)'; ctx.stroke();
-
-        // Media area
-        const pad = 12 * DPR;
-        const mediaW = Math.min(drawW*0.32, 160*DPR);
-        const mediaH = Math.min(drawH - pad*2, 96*DPR);
-        const mediaX = drawX + pad, mediaY = drawY + pad;
-
-        drawMedia(ctx, c.media, mediaX, mediaY, mediaW, mediaH, state.time);
-
-        // Text area
-        const tx = mediaX + mediaW + pad;
-        const tw = drawW - (mediaW + pad*3);
-        drawText(ctx, c.title, tx, mediaY-2*DPR, 16*DPR, '#e7eefb', 800);
-        drawWantedStars(ctx, tx + 10*DPR, mediaY + 22*DPR, c.rating, 5, state.time);
-
-        // Blurb
-        drawParagraph(ctx, c.blurb, tx, mediaY + 44*DPR, tw, 12.5*DPR, '#a7b1c2');
-
-        // Glow on hover
+        RRect(ctx, x, y, Wc, Hc, r);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        ctx.lineWidth = 1; ctx.strokeStyle = '#e5e7eb'; ctx.stroke();
         if (state.glow && c.hover>0.01){
-          ctx.shadowBlur = 18*DPR*c.hover;
-          ctx.shadowColor = 'rgba(34,211,238,.35)';
-          ctx.strokeStyle = 'rgba(34,211,238,.35)';
+          ctx.shadowBlur = 14*DPR*c.hover;
+          ctx.shadowColor = 'rgba(34,197,94,.15)';
           ctx.stroke();
           ctx.shadowBlur = 0;
         }
+
+        // Media left
+        const mediaW = Math.min(Wc*0.3, 160*DPR);
+        const mediaH = Math.min(Hc - pad*2, 100*DPR);
+        const mediaX = x + pad, mediaY = y + pad;
+        drawMedia(ctx, c.media, mediaX, mediaY, mediaW, mediaH, t);
+
+        // Text right
+        const tx = mediaX + mediaW + pad, tw = Wc - (mediaW + pad*3);
+        drawText(ctx, c.title, tx, mediaY - 2*DPR, 16*DPR, '#0b1220', 800);
+        drawStarsRow(ctx, tx + 10*DPR, mediaY + 22*DPR, c.rating, 5, t);
+        drawParagraph(ctx, c.blurb, tx, mediaY + 44*DPR, tw, 12.5*DPR, '#475569');
+
+        // Category tag (top‑right)
+        const tag = c.category.replace(/^([#\s]+)/,'').trim();
+        const tagW = Math.min(tw, 160*DPR);
+        ctx.globalAlpha = .9;
+        drawText(ctx, tag, x + Wc - tagW - pad, y + pad, 11*DPR, '#64748b', 700);
+        ctx.globalAlpha = 1;
+
         ctx.restore();
       }
+    }
 
+    function step(now){
+      state.time = now || (performance.now ? performance.now() : Date.now());
+      draw();
       requestAnimationFrame(step);
     }
 
     // Toggles
-    document.getElementById('toggleGlow').addEventListener('click', () => { state.glow = !state.glow; });
+    document.getElementById('toggleGlow').addEventListener('click', () => state.glow = !state.glow);
     document.getElementById('togglePerf').addEventListener('click', () => { state.perf = !state.perf; initParticles(); });
 
-    // Kickoff
-    resize(); initParticles(); layout(); requestAnimationFrame(step);
+    // Boot
+    function boot(){ resize(); initParticles(); layout(); SCROLL_Y = (window.scrollY||0)*DPR; requestAnimationFrame(step); }
+    window.addEventListener('load', boot, { once:true });
+    window.addEventListener('resize', () => { document.body.style.height = Math.ceil(state.maxY / DPR + 80) + 'px'; }, { passive:true });
   })();
   </script>
 </body>
