@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Anime Canvas — Wanted Stars</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{
+      --bg0:#070b14; --bg1:#0b1220;
+      --ink:#e8edf3; --soft:#a7b1c2;
+      --glow:#22d3ee; --warn:#ef4444; --gold:#ffd54a; --line:#1f2937;
+      --card:#0d1424; --card-h:#121a2c;
+      --accent:#f59e0b; --ok:#10b981;
+    }
+    html,body{height:100%;margin:0;background:radial-gradient(1200px 700px at 15% 10%,var(--bg1),var(--bg0));color:var(--ink);font-family:Inter,Segoe UI,Roboto,system-ui,-apple-system,sans-serif;}
+    canvas{position:fixed;inset:0;display:block;z-index:0}
+    .hud{position:fixed;left:20px;top:16px;z-index:2;user-select:none}
+    .title{font-weight:800;letter-spacing:.4px;font-size:clamp(22px,3vw,36px);text-shadow:0 0 18px rgba(34,211,238,.25)}
+    .sub{opacity:.8;font-size:13px;margin-top:6px}
+    .pill{display:inline-block;padding:6px 10px;border:1px solid #1e293b;border-radius:999px;background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,0));margin-top:10px;color:#cbd5e1}
+    .footer{position:fixed;right:20px;bottom:12px;z-index:2;opacity:.8;font-size:12px}
+    /* Accessibility toggles (no external CSS/JS needed) */
+    .toggles{position:fixed;left:20px;bottom:14px;z-index:2;display:flex;gap:10px}
+    .toggle{cursor:pointer;border:1px solid #233048;border-radius:999px;padding:6px 10px;background:rgba(255,255,255,.02)}
+    .toggle:hover{background:rgba(255,255,255,.05)}
+  </style>
+</head>
+<body>
+  <canvas id="bg"></canvas>
+  <div class="hud">
+    <div class="title">ANIME THAT I WANT TO WATCH 🎬✨</div>
+    <div class="sub">All‑Canvas showcase with GTA‑style stars, animated covers, and spoiler‑free vibes.</div>
+    <div class="pill">Tip: move mouse or tap to highlight</div>
+  </div>
+  <div class="toggles">
+    <button class="toggle" id="toggleGlow">Toggle Glow</button>
+    <button class="toggle" id="togglePerf">Performance Mode</button>
+  </div>
+  <div class="footer">Canvas powered animations, requestAnimationFrame loop, and optional ImageDecoder for animated images.</div>
+
+  <script>
+  ;(() => {
+    const canvas = document.getElementById('bg');
+    const ctx = canvas.getContext('2d', { alpha: true });
+    let W = 0, H = 0, DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+
+    const state = {
+      items: [],
+      cards: [],
+      pointer: { x: 0, y: 0, down:false },
+      time: 0,
+      glow: true,
+      perf: false
+    };
+
+    // Anime data: replace img with local animated GIF/APNG paths under ./assets/ (kept short and spoiler‑free)
+    const animeList = [
+      { title:"Attack on Titan",      rating:5,  img:"assets/aot.gif",      blurb:"Cycles of freedom and war collide in a brutal epic." },
+      { title:"Vinland Saga",         rating:5,  img:"assets/vinland.gif",  blurb:"A journey from revenge to the cost of peace." },
+      { title:"Steins;Gate",          rating:5,  img:"assets/steins.gif",   blurb:"Small timeline tweaks carry heavy consequences." },
+      { title:"Fullmetal Alchemist",  rating:5,  img:"assets/fmab.gif",     blurb:"Alchemy, brotherhood, and the price of desire." },
+      { title:"Code Geass",           rating:4.5,img:"assets/geass.gif",    blurb:"Masked rebellion plays chess with fate." },
+      { title:"Neon Genesis Eva",     rating:4.5,img:"assets/eva.gif",      blurb:"Mecha as a mirror for identity and fear." },
+      { title:"Monster",              rating:5,  img:"assets/monster.gif",  blurb:"One choice echoes through a moral labyrinth." },
+      { title:"Cyberpunk: Edgerunners",rating:5, img:"assets/edger.gif",    blurb:"Found family racing against a city’s entropy." },
+      { title:"Ghost in the Shell",   rating:5,  img:"assets/gits.gif",     blurb:"Networks and selfhood blur into the machine." },
+      { title:"Clannad: After Story", rating:5,  img:"assets/clannad.gif",  blurb:"Family, hardship, and quiet miracles." }
+    ];
+
+    // Resize and DPR handling
+    function resize(){
+      W = Math.floor(window.innerWidth * DPR);
+      H = Math.floor(window.innerHeight * DPR);
+      canvas.width = W; canvas.height = H;
+      canvas.style.width = Math.floor(W / DPR) + 'px';
+      canvas.style.height = Math.floor(H / DPR) + 'px';
+      layout();
+    }
+    window.addEventListener('resize', resize, { passive:true });
+
+    // Background particles
+    const PCOUNT_BASE = 120;
+    let particles = [];
+    function initParticles(){
+      const PCOUNT = state.perf ? Math.floor(PCOUNT_BASE*0.45) : PCOUNT_BASE;
+      particles = Array.from({length:PCOUNT}, () => ({
+        x: Math.random()*W, y: Math.random()*H,
+        r: (Math.random()*1.6+0.5)*DPR,
+        vx: (Math.random()-.5)*0.25*DPR,
+        vy: (Math.random()-.5)*0.25*DPR,
+        hue: Math.random()*360
+      }));
+    }
+
+    // Image helpers: prefer WebCodecs ImageDecoder for animated images if available; fallback to HTMLImage + redraw each frame
+    function loadAnimated(src){
+      const supportsDecoder = ('ImageDecoder' in window);
+      let obj = { kind:'fallback', w:0, h:0, ready:false };
+
+      if (supportsDecoder){
+        obj.kind = 'decoder';
+        obj.frames = [];
+        obj.index = 0;
+        obj.delay = 80;
+        (async () => {
+          try{
+            const resp = await fetch(src);
+            const buff = await resp.arrayBuffer();
+            const dec = new ImageDecoder({ data: new Uint8Array(buff), type: resp.headers.get('content-type') || 'image/gif' });
+            await dec.tracks.ready;
+            const frameCount = dec.tracks.selectedTrack?.frameCount || 1;
+            for (let i=0;i<frameCount;i++){
+              const { image, duration } = await dec.decode({ frameIndex:i });
+              const bmp = await createImageBitmap(image);
+              obj.frames.push({ bmp, duration: duration || obj.delay });
+              if (i===0){ obj.w = bmp.width; obj.h = bmp.height; }
+            }
+            obj.ready = true;
+          }catch(e){
+            // Fallback silently
+            obj.kind = 'img';
+            const im = new Image(); im.decoding = 'async'; im.loading = 'eager';
+            im.onload = () => { obj.w = im.naturalWidth; obj.h = im.naturalHeight; obj.ready = true; };
+            im.src = src; obj.img = im;
+          }
+        })();
+      } else {
+        obj.kind = 'img';
+        const im = new Image(); im.decoding = 'async'; im.loading = 'eager';
+        im.onload = () => { obj.w = im.naturalWidth; obj.h = im.naturalHeight; obj.ready = true; };
+        im.src = src; obj.img = im;
+      }
+      return obj;
+    }
+
+    // Create cards with target rects
+    function layout(){
+      // Grid config
+      const pd = 18 * DPR;
+      const cols = Math.max(1, Math.min(4, Math.floor((W/DPR) / 320)));
+      const cardW = Math.floor((W - (pd*(cols+1))) / cols);
+      const cardH = Math.floor(120 * DPR + cardW*0.05); // image row + text
+
+      state.cards.length = 0;
+      let cx = 0, cy = 0;
+      animeList.forEach((a, i) => {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const x = Math.floor(pd + col*(cardW + pd));
+        const y = Math.floor(pd + row*(cardH + pd));
+        const w = Math.floor(cardW);
+        const h = Math.floor(cardH);
+
+        if (!state.items[i]){
+          state.items[i] = {
+            media: loadAnimated(a.img)
+          };
+        }
+
+        const card = state.cards[i] || {};
+        card.x = card.x ?? x; card.y = card.y ?? (y + 30*DPR);
+        card.tx = x; card.ty = y;
+        card.w = w; card.h = h;
+        card.title = a.title;
+        card.rating = a.rating;
+        card.blurb = a.blurb;
+        card.media = state.items[i].media;
+        card.scale = card.scale ?? 1;
+        card.hover = 0;
+        state.cards[i] = card;
+        cy = y + h;
+      });
+      // Add bottom spacing by adding some fake height
+      state.maxY = (state.cards.length ? state.cards[state.cards.length-1].ty + state.cards[state.cards.length-1].h : 0) + pd;
+    }
+
+    // Pointer interactions
+    canvas.addEventListener('mousemove', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      state.pointer.x = (e.clientX - rect.left) * DPR;
+      state.pointer.y = (e.clientY - rect.top) * DPR;
+    }, { passive:true });
+    canvas.addEventListener('mouseleave', () => {
+      state.pointer.x = -9999; state.pointer.y = -9999;
+    });
+    canvas.addEventListener('pointerdown', () => { state.pointer.down = true; });
+    canvas.addEventListener('pointerup', () => { state.pointer.down = false; });
+
+    // Draw utils
+    function RRect(ctx,x,y,w,h,r){
+      const rr = Math.min(r, Math.min(w,h)/2);
+      ctx.beginPath();
+      ctx.moveTo(x+rr, y);
+      ctx.arcTo(x+w, y, x+w, y+h, rr);
+      ctx.arcTo(x+w, y+h, x, y+h, rr);
+      ctx.arcTo(x, y+h, x, y, rr);
+      ctx.arcTo(x, y, x+w, y, rr);
+      ctx.closePath();
+    }
+    function drawText(ctx, text, x, y, size, color, weight=700){
+      ctx.font = `${weight} ${size}px Inter, Segoe UI, Roboto, system-ui, -apple-system, sans-serif`;
+      ctx.fillStyle = color; ctx.textBaseline = 'top';
+      ctx.fillText(text, x, y);
+    }
+    function drawParagraph(ctx, text, x, y, w, size, color){
+      ctx.font = `400 ${size}px Inter, Segoe UI, Roboto, system-ui, -apple-system, sans-serif`;
+      ctx.fillStyle = color; ctx.textBaseline = 'top';
+      const words = text.split(' ');
+      let line = '', yy = y, lh = Math.round(size*1.35);
+      for (const word of words){
+        const t = line ? (line + ' ' + word) : word;
+        if (ctx.measureText(t).width > w){ ctx.fillText(line, x, yy); yy += lh; line = word; }
+        else line = t;
+      }
+      if (line) ctx.fillText(line, x, yy);
+    }
+    function drawStar(ctx, cx, cy, spikes, outerR, innerR, fill, stroke, shadow=0, glowColor='#22d3ee'){
+      let rot = Math.PI / 2 * 3;
+      let x = cx, y = cy;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - outerR);
+      for (let i = 0; i < spikes; i++) {
+        x = cx + Math.cos(rot) * outerR;
+        y = cy + Math.sin(rot) * outerR;
+        ctx.lineTo(x, y);
+        rot += Math.PI / spikes;
+
+        x = cx + Math.cos(rot) * innerR;
+        y = cy + Math.sin(rot) * innerR;
+        ctx.lineTo(x, y);
+        rot += Math.PI / spikes;
+      }
+      ctx.lineTo(cx, cy - outerR);
+      ctx.closePath();
+      if (shadow>0){
+        ctx.shadowBlur = shadow;
+        ctx.shadowColor = glowColor;
+      }
+      ctx.fillStyle = fill;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.lineWidth = Math.max(1, outerR*0.12);
+      ctx.strokeStyle = stroke;
+      ctx.stroke();
+    }
+
+    // GTA‑style wanted stars row
+    function drawWantedStars(ctx, x, y, level, max=5, t=0){
+      const starGap = 22 * DPR;
+      const baseR = 9 * DPR;
+      const innerR = baseR * 0.5;
+      for (let i=0;i<max;i++){
+        const filled = i < Math.round(level - 1e-6);
+        const danger = level >= 5 ? 1 : (level >= 4 ? 0.6 : 0);
+        const puls = danger ? (0.55 + 0.45*Math.abs(Math.sin(t*0.004 + i))) : 0;
+        const glow = filled ? (6*DPR*(state.glow?1:0)) + (danger? 6*DPR*puls : 0) : 0;
+        const fill = filled ? (danger ? `hsl(${Math.round(0+20*puls)},85%,${Math.round(50+8*puls)}%)` : '#ffd54a') : 'rgba(0,0,0,0.15)';
+        const stroke = filled ? '#2b2b2b' : '#39445a';
+        drawStar(ctx, x + i*starGap, y, 5, baseR, innerR, fill, stroke, glow, danger ? '#ef4444' : '#ffd54a');
+      }
+    }
+
+    // Media draw (ImageDecoder animated or fallback)
+    function drawMedia(ctx, media, dx, dy, dw, dh, t){
+      if (!media || !media.ready) {
+        // Placeholder shimmer
+        const g = ctx.createLinearGradient(dx, dy, dx+dw, dy);
+        g.addColorStop(0, '#0f172a'); g.addColorStop(0.5, '#0b1220'); g.addColorStop(1, '#0f172a');
+        ctx.fillStyle = g; RRect(ctx, dx, dy, dw, dh, 10*DPR); ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,.06)'; ctx.stroke();
+        return;
+      }
+      if (media.kind === 'decoder' && media.frames && media.frames.length){
+        // Cycle frames by accumulated time
+        const total = media.frames.reduce((s,f)=>s+f.duration,0) || 1;
+        let tt = Math.floor(t % total);
+        let idx = 0; let acc = 0;
+        for(let i=0;i<media.frames.length;i++){ acc += media.frames[i].duration; if (tt < acc){ idx = i; break; } }
+        const bmp = media.frames[idx].bmp;
+        // Fit cover
+        const scale = Math.max(dw/bmp.width, dh/bmp.height);
+        const sw = bmp.width*scale, sh = bmp.height*scale;
+        const sx = dx + (dw - sw)/2, sy = dy + (dh - sh)/2;
+        RRect(ctx, dx, dy, dw, dh, 10*DPR); ctx.save(); ctx.clip();
+        ctx.drawImage(bmp, sx, sy, sw, sh);
+        ctx.restore();
+        ctx.strokeStyle = 'rgba(255,255,255,.07)'; ctx.stroke();
+      } else if (media.kind === 'img' && media.img){
+        const im = media.img;
+        const scale = Math.max(dw/(im.naturalWidth||dw), dh/(im.naturalHeight||dh));
+        const sw = (im.naturalWidth||dw)*scale;
+        const sh = (im.naturalHeight||dh)*scale;
+        const sx = dx + (dw - sw)/2, sy = dy + (dh - sh)/2;
+        RRect(ctx, dx, dy, dw, dh, 10*DPR); ctx.save(); ctx.clip();
+        ctx.drawImage(im, sx, sy, sw, sh);
+        ctx.restore();
+        ctx.strokeStyle = 'rgba(255,255,255,.07)'; ctx.stroke();
+      }
+    }
+
+    // Main loop
+    function step(now){
+      state.time = now || (performance.now ? performance.now() : Date.now());
+
+      // Clear
+      ctx.clearRect(0,0,W,H);
+
+      // Background particles
+      for (const p of particles){
+        p.x += p.vx; p.y += p.vy; p.hue = (p.hue + 0.2) % 360;
+        if (p.x < -10) p.x = W+10; if (p.x > W+10) p.x = -10;
+        if (p.y < -10) p.y = H+10; if (p.y > H+10) p.y = -10;
+        ctx.beginPath();
+        ctx.fillStyle = `hsla(${p.hue}, 90%, 60%, .5)`;
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+        ctx.fill();
+      }
+
+      // Cards
+      const mx = state.pointer.x, my = state.pointer.y;
+      for (const c of state.cards){
+        // Lerp to target
+        c.x += (c.tx - c.x) * 0.1;
+        c.y += (c.ty - c.y) * 0.12;
+
+        // Hover detection
+        const hx = mx > c.x && mx < c.x + c.w;
+        const hy = my > c.y && my < c.y + c.h;
+        const targetHover = (hx && hy) ? 1 : 0;
+        c.hover += (targetHover - c.hover) * 0.2;
+        c.scale = 1 + 0.02*c.hover;
+
+        const x = c.x, y = c.y, w = c.w, h = c.h;
+        const sc = c.scale;
+        const cx = x + w/2, cy = y + h/2;
+        const drawX = cx - (w*sc)/2, drawY = cy - (h*sc)/2, drawW = w*sc, drawH = h*sc;
+
+        // Card panel
+        ctx.save();
+        RRect(ctx, drawX, drawY, drawW, drawH, 16*DPR);
+        const grd = ctx.createLinearGradient(drawX, drawY, drawX, drawY+drawH);
+        grd.addColorStop(0, 'rgba(255,255,255,.03)');
+        grd.addColorStop(1, 'rgba(255,255,255,.01)');
+        ctx.fillStyle = grd; ctx.fill();
+        ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,255,255,.08)'; ctx.stroke();
+
+        // Media area
+        const pad = 12 * DPR;
+        const mediaW = Math.min(drawW*0.32, 160*DPR);
+        const mediaH = Math.min(drawH - pad*2, 96*DPR);
+        const mediaX = drawX + pad, mediaY = drawY + pad;
+
+        drawMedia(ctx, c.media, mediaX, mediaY, mediaW, mediaH, state.time);
+
+        // Text area
+        const tx = mediaX + mediaW + pad;
+        const tw = drawW - (mediaW + pad*3);
+        drawText(ctx, c.title, tx, mediaY-2*DPR, 16*DPR, '#e7eefb', 800);
+        drawWantedStars(ctx, tx + 10*DPR, mediaY + 22*DPR, c.rating, 5, state.time);
+
+        // Blurb
+        drawParagraph(ctx, c.blurb, tx, mediaY + 44*DPR, tw, 12.5*DPR, '#a7b1c2');
+
+        // Glow on hover
+        if (state.glow && c.hover>0.01){
+          ctx.shadowBlur = 18*DPR*c.hover;
+          ctx.shadowColor = 'rgba(34,211,238,.35)';
+          ctx.strokeStyle = 'rgba(34,211,238,.35)';
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+        }
+        ctx.restore();
+      }
+
+      requestAnimationFrame(step);
+    }
+
+    // Toggles
+    document.getElementById('toggleGlow').addEventListener('click', () => { state.glow = !state.glow; });
+    document.getElementById('togglePerf').addEventListener('click', () => { state.perf = !state.perf; initParticles(); });
+
+    // Kickoff
+    resize(); initParticles(); layout(); requestAnimationFrame(step);
+  })();
+  </script>
+</body>
+</html>
